@@ -1,0 +1,12 @@
+const crypto=require('node:crypto');const auth=require('../lib/auth');const {normalize,sign,verify}=require('../lib/quotes');const pdf=require('../lib/pdf');const failures=new Map();
+module.exports=async(req,res)=>{res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Content-Type-Options','nosniff');
+ try{auth.key();if(req.method!=='POST')return res.status(405).json({error:'Méthode interdite.'});if(!auth.origin(req))return res.status(403).json({error:'Origine refusée.'});
+ let b=typeof req.body==='string'?JSON.parse(req.body):req.body;if(!b||JSON.stringify(b).length>100000)return res.status(400).json({error:'Requête invalide.'});
+ if(b.action==='login'){const ip=req.headers['x-forwarded-for']||'unknown';const now=Date.now();const f=failures.get(ip);if(f&&f.until>now&&f.count>=5)return res.status(429).json({error:'Trop de tentatives. Réessayez dans 15 minutes.'});if(typeof b.password!=='string'||b.password.length>256||!auth.password(b.password)){const old=f&&f.until>now?f.count:0;failures.set(ip,{count:old+1,until:now+900000});if(failures.size>10000)failures.clear();return res.status(401).json({error:'Mot de passe incorrect.'});}failures.delete(ip);auth.cookie(res);return res.json({ok:true});}
+ if(!auth.authorized(req))return res.status(401).json({error:'Votre session a expiré. Reconnectez-vous ; la saisie est conservée dans cet onglet.'});
+ if(b.action==='logout'){auth.cookie(res,true);return res.json({ok:true});}
+ if(b.action==='preview'){const buffer=await pdf(normalize(b.quote));res.setHeader('Content-Type','application/pdf');return res.send(buffer);}
+ if(b.action==='validate'){const q=normalize(b.quote);q.number='KF-'+new Date().toLocaleDateString('sv-SE',{timeZone:'Africa/Douala'}).replaceAll('-','')+'-'+crypto.randomUUID().slice(0,8).toUpperCase();q.date=new Date().toLocaleDateString('fr-FR',{timeZone:'Africa/Douala'});return res.json({token:sign(q,auth.key()),number:q.number,date:q.date});}
+ if(b.action==='download'){const q=verify(b.token,auth.key());const buffer=await pdf(q,true);res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition',`attachment; filename="${q.number}.pdf"`);return res.send(buffer);}
+ return res.status(400).json({error:'Action inconnue.'});
+ }catch(e){console.error('KF request failed:',e.message);return res.status(400).json({error:'Impossible de traiter le devis. Vérifiez les champs et réessayez.'});}};
