@@ -5,6 +5,10 @@
     {
       "source": "/generer-devis",
       "destination": "/api/workspace"
+    },
+    {
+      "source": "/notre-equipe",
+      "destination": "/notre-equipe.html"
     }
   ],
   "functions": {
